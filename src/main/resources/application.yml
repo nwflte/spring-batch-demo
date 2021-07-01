@@ -1,0 +1,13 @@
+spring:
+  jpa:
+    show-sql: true
+    database: POSTGRESQL
+    hibernate:
+      ddl-auto: update
+  datasource:
+    username: postgres
+    password: postgres
+    platform: postgres
+    url: "jdbc:postgresql://localhost:5432/prod"
+  batch:
+    initialize-schema: always
