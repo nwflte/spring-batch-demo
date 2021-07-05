@@ -11,6 +11,7 @@ import org.springframework.batch.core.job.builder.FlowBuilder;
 import org.springframework.batch.core.job.flow.Flow;
 import org.springframework.batch.core.job.flow.support.SimpleFlow;
 import org.springframework.batch.core.repository.JobRepository;
+import org.springframework.batch.core.step.tasklet.Tasklet;
 import org.springframework.batch.item.ItemReader;
 import org.springframework.batch.item.ItemWriter;
 import org.springframework.batch.item.data.RepositoryItemWriter;
@@ -19,12 +20,16 @@ import org.springframework.batch.item.file.FlatFileItemReader;
 import org.springframework.batch.item.file.builder.FlatFileItemReaderBuilder;
 import org.springframework.batch.item.file.builder.FlatFileItemWriterBuilder;
 import org.springframework.batch.item.file.mapping.BeanWrapperFieldSetMapper;
+import org.springframework.batch.item.xml.builder.StaxEventItemWriterBuilder;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.core.io.FileSystemResource;
+import org.springframework.oxm.xstream.XStreamMarshaller;
+
+import java.util.Collections;
 
 @Configuration
 @EnableBatchProcessing
@@ -35,6 +40,9 @@ public class BatchConfig {
     @Autowired
     private StepBuilderFactory stepBuilderFactory;
 
+    @Autowired
+    private TestTasklet tasklet;
+
     @Value("${file.input}")
     private String fileInput;
 
@@ -42,9 +50,10 @@ public class BatchConfig {
     private String fileOutput;
 
     @Bean
-    public Job clientsJob(@Qualifier("step1WriteInFile") Step step1, @Qualifier("step2WriteToDatabase") Step step2, JobRepository jobRepository) {
+    public Job clientsJob(@Qualifier("step1WriteInFile") Step step1, @Qualifier("step2WriteToDatabase") Step step2, @Qualifier("step3Tasklet") Step taskletStep,  JobRepository jobRepository) {
         Flow flow = new FlowBuilder<SimpleFlow>("flow")
-                .start(step1)
+                .start(taskletStep)
+                .next(step1)
                 .next(step2)
                 .build();
 
@@ -57,7 +66,7 @@ public class BatchConfig {
     }
 
     @Bean
-    public Step step1WriteInFile(@Qualifier("step1Reader") ItemReader<Client> reader, @Qualifier("step1Writer") ItemWriter writer) {
+    public Step step1WriteInFile(@Qualifier("step1Reader") ItemReader<Client> reader, @Qualifier("step1WriterXML") ItemWriter writer) {
         return stepBuilderFactory
                 .get("step1WriteInFile")
                 .allowStartIfComplete(true)
@@ -94,6 +103,21 @@ public class BatchConfig {
     }
 
     @Bean
+    public ItemWriter step1WriterXML() {
+        XStreamMarshaller studentMarshaller = new XStreamMarshaller();
+        studentMarshaller.setAliases(Collections.singletonMap(
+                "client",
+                Client.class
+        ));
+
+        return new StaxEventItemWriterBuilder<Client>().name("step1WriterXML")
+                .resource(new FileSystemResource(fileOutput))
+                .marshaller(studentMarshaller)
+                .rootTagName("clients")
+                .build();
+    }
+
+    @Bean
     public Step step2WriteToDatabase(@Qualifier("step1Reader") ItemReader<Client> reader, @Qualifier("step2Writer") ItemWriter writer) {
         return stepBuilderFactory
                 .get("step2WriteToDatabase")
@@ -108,6 +132,11 @@ public class BatchConfig {
     public RepositoryItemWriter<Client> step2Writer(ClientRepository clientRepository) {
         return new RepositoryItemWriterBuilder<Client>()
                 .repository(clientRepository).build();
+    }
+
+    @Bean
+    public Step step3Tasklet() {
+        return stepBuilderFactory.get("step3Tasklet").tasklet(tasklet).allowStartIfComplete(true).build();
     }
 
 }
